@@ -1,0 +1,5 @@
+-I.
+-std=c++14
+-stdlib=libc++
+
+
