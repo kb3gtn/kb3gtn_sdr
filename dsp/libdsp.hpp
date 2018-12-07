@@ -108,12 +108,11 @@ struct CFIRFilter {
 // domain range give the number of sync cycles to produce for (2,4,6 typically)
 // Larger domain ranges will give larger filters with better approximiations.
 // Larger number of Samples/Symbol will also cause the filter to become large.
-std::vector<double> computeRRCCoeff(int sps, double rolloff,
-                                    double domain_range = 4);
-
-// sample thing, returns matching I/Q coeff pairs.
-std::vector<std::complex<double>> computeCRRCCoeff(int sps, double rolloff,
-                                                   double domain_range = 4);
+std::vector<double> computeRRC(double sps, double a, double d);
+// samething returns I,Q the same (symetric filter)
+std::vector<std::complex<double>> computeCpxRRC(double sps, double a,double d);
 
 // apply a window to a set of double values
 void applyWindowHann(std::vector<double> v);
+void applyCpxWindowHann(std::vector<std::complex<double>> v);
+
