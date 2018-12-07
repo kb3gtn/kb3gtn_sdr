@@ -107,49 +107,62 @@ CSample CFIRFilter::process(CSample in) {
     return out;
 }
 
-std::vector<double> computeRRCCoeff(int sps, double rolloff,
-                                    double domain_range) {
-  double t = -1 * (domain_range);
-  std::vector<double> taps(2 * domain_range * sps);
-  std::cout << "Taps count = " << taps.size() << std::endl;
-
-  int i = 0; // working tap
-  double tap = 0;
-  while (t <= domain_range) {
-    std::cout << "T = " << t << ", tap=" << i << "\n";
-    if (t == 0) {
-      tap = (1 - rolloff) + (4 * rolloff / M_PI);
-    } else {
-      if ((t == 1 / (4 * rolloff)) || (t == -1 / 4 * rolloff)) {
-        tap = rolloff / std::sqrt(2) *
-                  ((1 + 2 / M_PI) * std::sin(M_PI / (4 * rolloff))) +
-              (1 - 2 / M_PI) * std::cos(M_PI / (4 * rolloff));
+std::vector<double> computeRRC(double sps, double a, double d) {
+    double tap_count = ( sps*2.0*d )+1.0;
+    std::vector<double> p(tap_count);
+    std::fill(p.begin(), p.end(), 0.0);
+    std::vector<double>::iterator cp = p.begin(); // current tap iterator.
+    for ( double t=-1*d; t < d+(1.0/sps); t=t+(1.0/sps) ) {
+        std::cout << "T=" << t << std::endl;
+        if ( t == 0 ) {
+            std::cout << "(debug) t=0 case hit..\n";
+            *cp = (1-a)+4.0*a/M_PI; // OK
+        } else {
+            if ( ( t == 1.0/(4.0*a)) || (t == -1.0/(4.0*a)) ) {
+                std::cout << "(debug) t=1/(4*a) case hit..\n";
+                *cp = a/std::sqrt(2)*((1.0+2.0/M_PI)*std::sin(M_PI/(4.0*a))+(1.0-2.0/M_PI)*std::cos(M_PI/(4.0*a)));
             } else {
-              tap = ((std::sin(M_PI * t * (1 - rolloff)) + 4) *
-                     (rolloff * t * std::cos(M_PI * t * (1 + rolloff))) /
-                     (M_PI * t * std::pow(1 - (4 * rolloff * t), 2)));
+                // matlab: (sin(pi*-4*(1-a))+4*a*-4*cos(pi*-4*(1+a)))/(pi*-4*(1-(4*a*-4)^2))
+                *cp =(sin(M_PI*t*(1-a))+4*a*t*cos(M_PI*t*(1+a)))/(M_PI*t*(1-pow(4*a*t,2)));
             }
+        }
+        cp++; // next tap.
     }
-    t = t + (1 / (double)sps);
-    taps[i] = tap;
-    i++; // next tap
-  }
-  return taps;
+    // Normalize unit energy
+    // get squared sum
+    double ss=0;
+    for ( auto &t: p)
+        ss = ss + (t*t);
+    // compute the normalization value (nv)
+    double nv = std::sqrt(ss);
+    // apply normalization value to all taps
+    for ( auto &t: p )
+        t = t / nv;
+    // return taps computed
+    return p;
 }
 
-std::vector<std::complex<double>> computeCRRCCoeff(int sps, double rolloff,
-                                                   double domain_range) {
-  std::vector<double> taps = computeRRCCoeff(sps, rolloff, domain_range);
+std::vector<std::complex<double>> computeCpxRRC(double sps, double a,
+                                                   double d) {
+  std::vector<double> taps = computeRRC(sps, a, d);
   std::vector<std::complex<double>> ctaps;
   ctaps.resize(taps.size());
   for (int i = 0; i < taps.size(); ++i) {
-    ctaps[i] = (taps[i], taps[i]);
+    ctaps[i] = std::complex<double>(taps[i], taps[i]);
   }
   return ctaps;
 }
 
 // apply a hann window to a set of double values
 void applyWindowHann(std::vector<double> v) {
+  double el = v.size();
+  for (int i = 0; i < el; ++i) {
+    double scalar = 0.5 * (1 - (std::cos((2 * M_PI * i) / (el - 1))));
+    v[i] = v[i] * scalar;
+  }
+}
+
+void applyCpxWindowHann(std::vector<std::complex<double>> v) {
   double el = v.size();
   for (int i = 0; i < el; ++i) {
     double scalar = 0.5 * (1 - (std::cos((2 * M_PI * i) / (el - 1))));
