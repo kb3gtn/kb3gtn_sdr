@@ -116,3 +116,32 @@ std::vector<std::complex<double>> computeCpxRRC(double sps, double a,double d);
 void applyWindowHann(std::vector<double> v);
 void applyCpxWindowHann(std::vector<std::complex<double>> v);
 
+
+// file handle
+using filehandle = int;
+
+struct Recorder {
+    filehandle fh;
+    Recorder( std::string filename );
+    // write buffer to file
+    int write( CSampleVector *buffer );
+};
+
+struct Playback {
+    filehandle fh;
+    Playback( std::string filename );
+    // fill buffer with samples from file.
+    // returns 0 when end of file is reached. (buffer will be resized on under-run)
+    // returns 1 when read filled buffer
+    int read( CSampleVector *buffer );
+};
+
+
+
+
+
+
+
+
+
+

@@ -162,6 +162,7 @@ void applyWindowHann(std::vector<double> v) {
   }
 }
 
+// apply a hann window to I/Q values.
 void applyCpxWindowHann(std::vector<std::complex<double>> v) {
   double el = v.size();
   for (int i = 0; i < el; ++i) {
