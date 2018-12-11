@@ -113,35 +113,43 @@ std::vector<double> computeRRC(double sps, double a, double d);
 std::vector<std::complex<double>> computeCpxRRC(double sps, double a,double d);
 
 // apply a window to a set of double values
-void applyWindowHann(std::vector<double> v);
-void applyCpxWindowHann(std::vector<std::complex<double>> v);
+void applyWindowHann(std::vector<double> *v);
+void applyCpxWindowHann( CSampleVector *v );
 
 
-// file handle
-using filehandle = int;
+// Create recording file
+Recorder::Recorder( std::string filename ) {
+    fh = open( filename.c_str(), O_CREAT | O_RDWR, 0666 );
+}
 
-struct Recorder {
-    filehandle fh;
-    Recorder( std::string filename );
-    // write buffer to file
-    int write( CSampleVector *buffer );
-};
+// write buffer to file
+int Recorder::write( CSampleVector *buffer ) {
+    if ( fh > 1 ) {
+        write(fh, samples->data(), samples->size()*sizeof(CSample) );
+        return 0;
+    } else {
+        return -1; // error
+    }
+}
 
-struct Playback {
-    filehandle fh;
-    Playback( std::string filename );
-    // fill buffer with samples from file.
-    // returns 0 when end of file is reached. (buffer will be resized on under-run)
-    // returns 1 when read filled buffer
-    int read( CSampleVector *buffer );
-};
+Playback::Playback( std::string filename ) {
+    fh = open( filename.c_str(), O_RDONLY );
+}
 
-
-
-
-
-
-
+int Playback::read( CSampleVector *buffer  ) {
+    if ( fh > 1 ) {
+        int bytes = read( fh, buffer->data(), buffer->size()*sizeof(CSample) );
+        if ( bytes == buffer->size()*sizeof(CSample) ) {
+            return 1;
+        } else {
+            // resize buffer to match data stored
+            buffer.resize( bytes / sizeof(CSample );
+            return 0;
+        }
+    } else {
+        return -1; // error
+    }
+}
 
 
 
