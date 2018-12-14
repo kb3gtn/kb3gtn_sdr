@@ -6,6 +6,7 @@
 #include <queue>
 #include <cmath>
 #include <algorithm>
+#include <memory>
 
 /////////////////////////////
 // Type definitions
@@ -72,7 +73,7 @@ struct NCO {
     // quick constructor
     NCO( RadRate _r, Phase _p ) : rate(_r), phase_acc(_p)  {}
     // complex next sample, add offset to phase_acc
-    Sample generate( Phase offset );
+    Sample generate( Phase offset=0 );
 };
 
 // Complex NCO object (COS)
@@ -84,14 +85,14 @@ struct CNCO {
     // simple constructor
     CNCO( RadRate _r, Phase _p ) : rate(_r), phase_acc(_p) {}
     // generate next sample, add offset to phase_acc
-    CSample generate( Phase offset );
+    CSample generate( Phase offset=0 );
 };
 
 // FIR Filter for real values
 struct FIRFilter {
     std::vector<double> coeff;
     std::vector<Sample> taps;
-    FIRFilter( std::vector<double> &_coeff );
+    FIRFilter( std::vector<double> _coeff );
     Sample process(Sample in);
 };
 
@@ -99,7 +100,7 @@ struct FIRFilter {
 struct CFIRFilter {
     std::vector< std::complex<double> > coeff;
     std::vector<CSample> taps;
-    CFIRFilter( std::vector< std::complex<double> > &_coeff );
+    CFIRFilter( std::vector< std::complex<double> > _coeff );
     CSample process(CSample in);
 };
 
@@ -117,39 +118,65 @@ void applyWindowHann(std::vector<double> *v);
 void applyCpxWindowHann( CSampleVector *v );
 
 
-// Create recording file
-Recorder::Recorder( std::string filename ) {
-    fh = open( filename.c_str(), O_CREAT | O_RDWR, 0666 );
-}
+// Accumulate and Dump  (complex and normal)
+struct CAccumulateAndDump {
+    int window_size;
+    int current_win_value;
+    CSample accumulator;
+    CSample lastDumpValue;
+    CAccumulateAndDump( int _window_size, CSample init_val=CSample(0,0) );
+    CSample process( CSample input );
+};
 
-// write buffer to file
-int Recorder::write( CSampleVector *buffer ) {
-    if ( fh > 1 ) {
-        write(fh, samples->data(), samples->size()*sizeof(CSample) );
-        return 0;
-    } else {
-        return -1; // error
-    }
-}
+struct AccumulateAndDump {
+    int window_size;
+    int current_win_value;
+    Sample accumulator;
+    Sample lastDumpValue;
+    AccumulateAndDump( int _window_size, Sample init_val=0 );
+    Sample process( Sample input );
+};
 
-Playback::Playback( std::string filename ) {
-    fh = open( filename.c_str(), O_RDONLY );
-}
+struct SampleDelay {
+    SampleDelay( int delay_cnt );
+    std::vector<Sample> delay_reg;
+    int read_idx;
+    int write_idx;
+    Sample process(Sample input );
+};
 
-int Playback::read( CSampleVector *buffer  ) {
-    if ( fh > 1 ) {
-        int bytes = read( fh, buffer->data(), buffer->size()*sizeof(CSample) );
-        if ( bytes == buffer->size()*sizeof(CSample) ) {
-            return 1;
-        } else {
-            // resize buffer to match data stored
-            buffer.resize( bytes / sizeof(CSample );
-            return 0;
-        }
-    } else {
-        return -1; // error
-    }
-}
+struct CSampleDelay {
+    CSampleDelay( int delay_cnt );
+    std::vector<CSample> delay_reg;
+    int read_idx;
+    int write_idx;
+    CSample process(CSample input );
+};
 
+
+// measure the phase of the input sample and compute
+// the phase error with respects to the BPSK reference constelation.
+Phase PhaseDetectorBPSK( CSample input );
+
+struct BpskDemod {
+    enum state_t {
+        acq_freq=0,
+        acq_phase=1,
+        track=2
+    } state;
+
+    int win_size;
+    double freq_est;
+    double phase_est;
+    int freq_lock_threshold;
+    int phase_lock_threshold;
+    std::shared_ptr<CFIRFilter> Filter;
+    std::shared_ptr<AccumulateAndDump> FreqErrorAcc;
+    std::shared_ptr<AccumulateAndDump> PhaseErrorAcc;
+    std::shared_ptr<SampleDelay> PhaseDelay;
+    std::shared_ptr<CNCO> NCO;
+    BpskDemod( int sps, double alpha, int winsize );
+    CSample process(CSample input);
+};
 
 

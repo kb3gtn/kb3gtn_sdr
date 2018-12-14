@@ -61,7 +61,7 @@ CSample Polar2CSample( Magnitude m, Phase p ) {
     return std::polar(m,p);
 }
 
-FIRFilter::FIRFilter( std::vector<double> &_coeff ) {
+FIRFilter::FIRFilter( std::vector<double> _coeff ) {
     // grab local copy of coefficents
     coeff = _coeff;
     // need 1 tap for coeff
@@ -84,7 +84,7 @@ Sample FIRFilter::process(Sample in) {
     return out;
 }
 
-CFIRFilter::CFIRFilter( std::vector< std::complex<double> > &_coeff ) {
+CFIRFilter::CFIRFilter( std::vector< std::complex<double> > _coeff ) {
     // grab local copy of coefficents
     coeff = _coeff;
     // need 1 tap for coeff
@@ -170,4 +170,158 @@ void applyCpxWindowHann(std::vector<std::complex<double>> v) {
     v[i] = v[i] * scalar;
   }
 }
+
+// Accumulate and Dump  (complex and normal)
+CAccumulateAndDump::CAccumulateAndDump( int _window_size, CSample init_val) {
+    window_size = _window_size;
+    current_win_value = 0;
+    accumulator = 0;
+    lastDumpValue = init_val;
+}
+
+CSample CAccumulateAndDump::process( CSample input ) {
+    if ( current_win_value == window_size ) {
+        lastDumpValue = accumulator;
+        accumulator = CSample(0,0);
+        current_win_value = 0;
+    }
+    accumulator += input;
+    current_win_value++;
+    return lastDumpValue;
+}
+
+AccumulateAndDump::AccumulateAndDump( int _window_size, Sample init_val) {
+    window_size = _window_size;
+    current_win_value = 0;
+    accumulator = 0;
+    lastDumpValue = init_val;
+}
+
+Sample AccumulateAndDump::process( Sample input ) {
+    if ( current_win_value == window_size ) {
+        lastDumpValue = accumulator;
+        accumulator = 0;
+        current_win_value = 0;
+    }
+    accumulator += input;
+    current_win_value++;
+    return lastDumpValue;
+}
+
+Phase PhaseDetectorBPSK( CSample input ) {
+    Phase error_out;
+    Phase abs_phase = getPhase(input);
+    // compute error from BPSK Reference Constelation points 0 and +/-PI
+    if ( input.real() >= 0 ) {
+        error_out = abs_phase;
+    }
+    if ( input.real() < 0 ) {
+        if ( input.imag() > 0 ) {
+            error_out = abs_phase - M_PI;
+        } else {
+            error_out = (-1)*(abs_phase + M_PI);
+        }
+    }
+    return error_out;
+}
+
+
+SampleDelay::SampleDelay( int delay_cnt ) {
+    delay_reg.resize(delay_cnt);
+    std::fill(delay_reg.begin(), delay_reg.end(), 0 );
+    read_idx = 1;
+    write_idx = 0;
+}
+
+Sample SampleDelay::process(Sample input ) {
+    delay_reg[write_idx] = input;
+    Sample output = delay_reg[read_idx];
+    write_idx++;
+    read_idx++;
+    if ( write_idx == delay_reg.size() ) {
+        write_idx = 0;
+    }
+    if ( read_idx == delay_reg.size() ) {
+        read_idx = 0;
+    }
+    return output;
+}
+
+CSampleDelay::CSampleDelay( int delay_cnt ) {
+    delay_reg.resize(delay_cnt);
+    std::fill(delay_reg.begin(), delay_reg.end(), 0 );
+    read_idx = 1;
+    write_idx = 0;
+}
+
+CSample CSampleDelay::process(CSample input ) {
+    delay_reg[write_idx] = input;
+    CSample output = delay_reg[read_idx];
+    write_idx++;
+    read_idx++;
+    if ( write_idx == delay_reg.size() ) {
+        write_idx = 0;
+    }
+    if ( read_idx == delay_reg.size() ) {
+        read_idx = 0;
+    }
+    return output;
+}
+
+
+BpskDemod::BpskDemod( int sps, double alpha, int winsize ) {
+    Filter = std::make_shared<CFIRFilter>( computeCpxRRC(sps, alpha, 4 ) );
+    FreqErrorAcc = std::make_shared<AccumulateAndDump>(winsize);
+    PhaseErrorAcc = std::make_shared<AccumulateAndDump>(winsize);
+    PhaseDelay = std::make_shared<SampleDelay>(1);
+    NCO = std::make_shared<CNCO>(0,0);
+    phase_est = 0;
+    freq_est = 0;
+    state = acq_freq;
+}
+
+CSample BpskDemod::process( CSample input) {
+    // forward part of loop
+    NCO->rate = freq_est;
+    CSample wb_sample = NCO->generate(phase_est) * input;
+    CSample nb_sample = Filter->process(wb_sample);
+    // feedback loop
+    Phase phase_err = PhaseDetectorBPSK(nb_sample);
+    Phase phase_err_d1 = PhaseDelay->process(phase_err);
+    Phase delta_phase_err = phase_err - phase_err_d1;
+    // accumlate and scale output to give average
+    double AvgFreqError = FreqErrorAcc->process(delta_phase_err) / FreqErrorAcc->window_size;
+    double AvgPhaseError = PhaseErrorAcc->process(phase_err) / PhaseErrorAcc->window_size;
+    // state machine, update estimate for next sample input.
+    switch (state) {
+        case acq_freq:
+            phase_est = 0;
+            freq_est = AvgFreqError;
+            if ( AvgFreqError < freq_lock_threshold ) {
+                state == acq_phase;
+            }
+            break;
+        case acq_phase:
+            phase_est = AvgPhaseError;
+            if ( AvgPhaseError < phase_lock_threshold ) {
+                state == track;
+            }
+            if ( AvgFreqError > freq_lock_threshold ) {
+                state == acq_freq;
+            }
+            break;
+        case track:
+            phase_est = 0.25*AvgPhaseError;
+            freq_est = 0.1*AvgFreqError;
+            if ( AvgPhaseError > phase_lock_threshold) {
+                state == acq_phase;
+            }
+            if ( AvgFreqError > freq_lock_threshold ) {
+                state == acq_freq;
+            }
+    }
+
+    return nb_sample;
+}
+
 
